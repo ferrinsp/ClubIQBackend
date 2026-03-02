@@ -1,0 +1,26 @@
+{
+  "name": "clubiq-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch local-server.ts",
+    "build": "tsc",
+    "migrate": "tsx migrations/runner.ts",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@middy/core": "^5.5.0",
+    "@middy/http-json-body-parser": "^5.5.0",
+    "pg": "^8.13.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}
