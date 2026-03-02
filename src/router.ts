@@ -1,6 +1,8 @@
 import type { RouteHandler, LambdaEvent } from './types.js';
 import { notFound } from './lib/response.js';
 import { healthHandler } from './routes/health.js';
+import { loginHandler, refreshHandler } from './routes/auth.js';
+import { getClubHandler, updateClubHandler } from './routes/clubs.js';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
@@ -11,7 +13,11 @@ interface Route {
 }
 
 const routes: Route[] = [
-  { method: 'GET', path: '/health', handler: healthHandler },
+  { method: 'GET',  path: '/health',       handler: healthHandler },
+  { method: 'POST', path: '/auth/login',   handler: loginHandler },
+  { method: 'POST', path: '/auth/refresh', handler: refreshHandler },
+  { method: 'GET',  path: '/clubs/me',     handler: getClubHandler },
+  { method: 'PUT',  path: '/clubs/me',     handler: updateClubHandler },
 ];
 
 export function dispatch(event: LambdaEvent) {
