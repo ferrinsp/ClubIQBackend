@@ -1,15 +1,24 @@
+export interface ApiError {
+  code: string;
+  message: string;
+  field?: string;
+  details?: string;
+}
+
+export interface PaginationMeta {
+  page: number;
+  per_page: number;
+  total: number;
+}
+
 export interface ApiResponse<T = unknown> {
-  success: boolean;
-  data?: T;
-  error?: {
-    code: string;
-    message: string;
+  data: T | null;
+  meta: {
+    request_id: string;
+    timestamp: string;
+    pagination?: PaginationMeta;
   };
-  meta?: {
-    page?: number;
-    pageSize?: number;
-    total?: number;
-  };
+  errors: ApiError[];
 }
 
 export interface RouteHandler {

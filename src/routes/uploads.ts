@@ -1,9 +1,10 @@
 import type { RouteHandler } from '../types.js';
-import { ok, created, badRequest, notFound } from '../lib/response.js';
+import { ok, created, badRequest, notFound, err } from '../lib/response.js';
 import { pool } from '../db.js';
 import { extractAuth, isAuthError } from '../middleware/auth.js';
-import { processRosterCsv, processPaymentCsv } from '../lib/csv-processor.js';
+import { processRosterCsv, processPaymentCsv, processHistoricalRosterCsv } from '../lib/csv-processor.js';
 import { REQUIRED_COLUMNS } from '../lib/csv-schemas.js';
+import { parsePagination, buildPaginationMeta } from '../lib/pagination.js';
 import { z } from 'zod';
 
 const uploadSchema = z.object({
@@ -31,6 +32,17 @@ export const createUploadHandler: RouteHandler = async (event) => {
 
   const { fileType, fileName, seasonId, csvContent } = parsed.data;
 
+  // Validate file extension
+  if (!fileName.toLowerCase().endsWith('.csv')) {
+    return badRequest('Only CSV files are supported', 'fileName');
+  }
+
+  // Validate file size (10MB limit)
+  const MAX_SIZE = 10 * 1024 * 1024;
+  if (csvContent.length > MAX_SIZE) {
+    return err(413, 'FILE_TOO_LARGE', 'File exceeds maximum size of 10MB');
+  }
+
   // Validate season exists
   const client = await pool.connect();
   try {
@@ -46,35 +58,38 @@ export const createUploadHandler: RouteHandler = async (event) => {
 
     // Create upload record
     const { rows: uploadRows } = await client.query(
-      `INSERT INTO uploads (club_id, file_type, file_name, status, total_rows)
-       VALUES ($1, $2, $3, 'processing', 0) RETURNING id`,
-      [auth.clubId, fileType, fileName]
+      `INSERT INTO uploads (club_id, file_type, file_name, status, total_rows, uploaded_by)
+       VALUES ($1, $2, $3, 'processing', 0, $4) RETURNING id`,
+      [auth.clubId, fileType, fileName, auth.userId]
     );
     const uploadId = uploadRows[0].id;
 
     // Process CSV
     let result;
-    if (fileType === 'roster' || fileType === 'historical_roster') {
+    if (fileType === 'historical_roster') {
+      result = await processHistoricalRosterCsv(csvContent, auth.clubId, client);
+    } else if (fileType === 'roster') {
       result = await processRosterCsv(csvContent, auth.clubId, seasonId, client);
     } else {
       result = await processPaymentCsv(csvContent, auth.clubId, seasonId, client);
     }
 
     // Determine final status
-    const status = result.failedRows === 0
-      ? 'completed'
-      : result.successfulRows === 0
-        ? 'failed'
-        : 'completed_with_errors';
+    const status = result.errors.length > 0 && result.successfulRows === 0
+      ? 'failed'
+      : result.failedRows > 0
+        ? 'completed_with_errors'
+        : 'completed';
 
-    // Update upload record
+    // Update upload record with results, warnings, and audit info
     await client.query(
       `UPDATE uploads SET
          status = $1, total_rows = $2, successful_rows = $3, failed_rows = $4,
-         errors = $5, updated_at = now()
-       WHERE id = $6`,
+         errors = $5, warnings = $6, uploaded_by = $7, completed_at = now(), updated_at = now()
+       WHERE id = $8`,
       [status, result.totalRows, result.successfulRows, result.failedRows,
-       JSON.stringify(result.errors), uploadId]
+       JSON.stringify(result.errors), JSON.stringify(result.warnings),
+       auth.userId, uploadId]
     );
 
     return created({
@@ -99,23 +114,53 @@ export const listUploadsHandler: RouteHandler = async (event) => {
   const auth = extractAuth(event);
   if (isAuthError(auth)) return auth;
 
+  const { page, perPage, offset } = parsePagination(event);
+  const qs = event.queryStringParameters ?? {};
+
+  // Build optional filters
+  const conditions = ['club_id = $1'];
+  const params: (string | number)[] = [auth.clubId];
+  let paramIdx = 2;
+
+  if (qs.status) {
+    conditions.push(`status = $${paramIdx}`);
+    params.push(qs.status);
+    paramIdx++;
+  }
+  if (qs.upload_type) {
+    conditions.push(`file_type = $${paramIdx}`);
+    params.push(qs.upload_type);
+    paramIdx++;
+  }
+
+  const where = conditions.join(' AND ');
+
+  // Count total
+  const { rows: countRows } = await pool.query(`SELECT count(*)::int as total FROM uploads WHERE ${where}`, params);
+  const total = countRows[0].total;
+
+  // Fetch page
   const { rows } = await pool.query(
-    `SELECT id, file_type, file_name, status, total_rows, successful_rows, failed_rows, created_at, updated_at
-     FROM uploads WHERE club_id = $1 ORDER BY created_at DESC LIMIT 50`,
-    [auth.clubId]
+    `SELECT id, file_type, file_name, status, total_rows, successful_rows, failed_rows, completed_at, created_at, updated_at
+     FROM uploads WHERE ${where} ORDER BY created_at DESC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
+    [...params, perPage, offset]
   );
 
-  return ok(rows.map(r => ({
-    id: r.id,
-    fileType: r.file_type,
-    fileName: r.file_name,
-    status: r.status,
-    totalRows: r.total_rows,
-    successfulRows: r.successful_rows,
-    failedRows: r.failed_rows,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-  })));
+  return ok(
+    rows.map(r => ({
+      id: r.id,
+      fileType: r.file_type,
+      fileName: r.file_name,
+      status: r.status,
+      totalRows: r.total_rows,
+      successfulRows: r.successful_rows,
+      failedRows: r.failed_rows,
+      completedAt: r.completed_at,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    })),
+    buildPaginationMeta(page, perPage, total),
+  );
 };
 
 /**
@@ -131,7 +176,8 @@ export const getUploadHandler: RouteHandler = async (event) => {
   if (!uploadId) return badRequest('Missing upload ID');
 
   const { rows } = await pool.query(
-    `SELECT id, file_type, file_name, status, total_rows, successful_rows, failed_rows, errors, created_at, updated_at
+    `SELECT id, file_type, file_name, status, total_rows, successful_rows, failed_rows,
+            errors, warnings, uploaded_by, completed_at, created_at, updated_at
      FROM uploads WHERE id = $1 AND club_id = $2`,
     [uploadId, auth.clubId]
   );
@@ -150,6 +196,9 @@ export const getUploadHandler: RouteHandler = async (event) => {
     successfulRows: r.successful_rows,
     failedRows: r.failed_rows,
     errors: r.errors ?? [],
+    warnings: r.warnings ?? [],
+    uploadedBy: r.uploaded_by,
+    completedAt: r.completed_at,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   });

@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import type middy from '@middy/core';
 
 export function errorHandlerMiddleware(): middy.MiddlewareObj {
@@ -13,13 +14,17 @@ export function errorHandlerMiddleware(): middy.MiddlewareObj {
           'Access-Control-Allow-Origin': '*',
         },
         body: JSON.stringify({
-          success: false,
-          error: {
+          data: null,
+          meta: {
+            request_id: crypto.randomUUID(),
+            timestamp: new Date().toISOString(),
+          },
+          errors: [{
             code: 'INTERNAL_ERROR',
             message: process.env.NODE_ENV === 'development'
               ? (error as Error).message
               : 'An internal error occurred',
-          },
+          }],
         }),
       };
     },

@@ -40,3 +40,10 @@ export function extractAuth(event: LambdaEvent): AuthContext | LambdaResult {
 export function isAuthError(result: AuthContext | LambdaResult): result is LambdaResult {
   return 'statusCode' in result;
 }
+
+export function requireRole(auth: AuthContext, ...roles: string[]): LambdaResult | null {
+  if (!roles.includes(auth.role)) {
+    return err(403, 'FORBIDDEN', `This action requires one of: ${roles.join(', ')}`);
+  }
+  return null;
+}

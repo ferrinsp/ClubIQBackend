@@ -99,15 +99,15 @@ export const revenueForecastHandler: RouteHandler = async (event) => {
   const baseReturning = Math.round(totalPlayers * (retentionRate / 100));
   const baseRevenue = baseReturning * avgTuition;
 
-  // Optimistic: +5% retention
-  const optRate = Math.min(100, retentionRate + 5);
-  const optReturning = Math.round(totalPlayers * (optRate / 100));
-  const optRevenue = optReturning * avgTuition;
+  // High: +5% retention
+  const highRate = Math.min(100, retentionRate + 5);
+  const highReturning = Math.round(totalPlayers * (highRate / 100));
+  const highRevenue = highReturning * avgTuition;
 
-  // Pessimistic: -5% retention
-  const pessRate = Math.max(0, retentionRate - 5);
-  const pessReturning = Math.round(totalPlayers * (pessRate / 100));
-  const pessRevenue = pessReturning * avgTuition;
+  // Low: -5% retention
+  const lowRate = Math.max(0, retentionRate - 5);
+  const lowReturning = Math.round(totalPlayers * (lowRate / 100));
+  const lowRevenue = lowReturning * avgTuition;
 
   // Break-even
   const revenueGap = baseRevenue - totalRevenue;
@@ -127,21 +127,21 @@ export const revenueForecastHandler: RouteHandler = async (event) => {
         revenueChange: baseRevenue - totalRevenue,
         revenueChangePct: totalRevenue > 0 ? Math.round(((baseRevenue - totalRevenue) / totalRevenue) * 1000) / 10 : 0,
       },
-      optimistic: {
-        label: 'Optimistic',
-        retentionRate: optRate,
-        projectedPlayers: optReturning,
-        projectedRevenue: optRevenue,
-        revenueChange: optRevenue - totalRevenue,
-        revenueChangePct: totalRevenue > 0 ? Math.round(((optRevenue - totalRevenue) / totalRevenue) * 1000) / 10 : 0,
+      high: {
+        label: 'High',
+        retentionRate: highRate,
+        projectedPlayers: highReturning,
+        projectedRevenue: highRevenue,
+        revenueChange: highRevenue - totalRevenue,
+        revenueChangePct: totalRevenue > 0 ? Math.round(((highRevenue - totalRevenue) / totalRevenue) * 1000) / 10 : 0,
       },
-      pessimistic: {
-        label: 'Pessimistic',
-        retentionRate: pessRate,
-        projectedPlayers: pessReturning,
-        projectedRevenue: pessRevenue,
-        revenueChange: pessRevenue - totalRevenue,
-        revenueChangePct: totalRevenue > 0 ? Math.round(((pessRevenue - totalRevenue) / totalRevenue) * 1000) / 10 : 0,
+      low: {
+        label: 'Low',
+        retentionRate: lowRate,
+        projectedPlayers: lowReturning,
+        projectedRevenue: lowRevenue,
+        revenueChange: lowRevenue - totalRevenue,
+        revenueChangePct: totalRevenue > 0 ? Math.round(((lowRevenue - totalRevenue) / totalRevenue) * 1000) / 10 : 0,
       },
     },
     breakEven: {
