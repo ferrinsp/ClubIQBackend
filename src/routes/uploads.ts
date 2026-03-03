@@ -5,6 +5,7 @@ import { extractAuth, isAuthError } from '../middleware/auth.js';
 import { processRosterCsv, processPaymentCsv, processHistoricalRosterCsv } from '../lib/csv-processor.js';
 import { REQUIRED_COLUMNS } from '../lib/csv-schemas.js';
 import { parsePagination, buildPaginationMeta } from '../lib/pagination.js';
+import { resolveSeason } from '../repositories/season.repository.js';
 import { z } from 'zod';
 
 const uploadSchema = z.object({
@@ -48,11 +49,8 @@ export const createUploadHandler: RouteHandler = async (event) => {
   try {
     await client.query("SELECT set_config('app.current_club_id', $1, true)", [auth.clubId]);
 
-    const { rows: seasonRows } = await client.query(
-      'SELECT id FROM seasons WHERE id = $1 AND club_id = $2',
-      [seasonId, auth.clubId]
-    );
-    if (seasonRows.length === 0) {
+    const season = await resolveSeason(auth.clubId, seasonId, client);
+    if (!season) {
       return badRequest('Season not found');
     }
 

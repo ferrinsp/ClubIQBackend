@@ -9,6 +9,7 @@ import { revenueForecastHandler, revenueByAgeGroupHandler } from './routes/reven
 import { simulatorCalculateHandler } from './routes/simulator.js';
 import { listSeasonsHandler } from './routes/seasons.js';
 import { getBillingHandler, getPlansHandler, createCheckoutHandler, createPortalHandler, webhookHandler } from './routes/billing.js';
+import { getPlayersHandler, exportPlayersHandler } from './routes/players.js';
 import { checkRateLimit, type RateLimitResult } from './middleware/rate-limiter.js';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -51,6 +52,10 @@ const routes: Route[] = [
   { method: 'GET',  path: '/uploads',               handler: listUploadsHandler },
   { method: 'POST', path: '/simulator/calculate',   handler: simulatorCalculateHandler },
   { method: 'GET',  path: '/seasons',               handler: listSeasonsHandler },
+
+  // Players
+  { method: 'GET',  path: '/players',         handler: getPlayersHandler },
+  { method: 'GET',  path: '/players/export',  handler: exportPlayersHandler },
 
   // Billing
   { method: 'GET',  path: '/billing',          handler: getBillingHandler },

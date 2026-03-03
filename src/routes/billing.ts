@@ -1,26 +1,21 @@
 import type { RouteHandler } from '../types.js';
 import { ok, badRequest, err } from '../lib/response.js';
-import { query, pool } from '../db.js';
+import { query } from '../db.js';
 import { extractAuth, isAuthError, requireRole } from '../middleware/auth.js';
 import { env } from '../env.js';
 import { z } from 'zod';
 import { getAllPlans, getPlan, BETA_PLAN_ID } from '../lib/plans.js';
 import { getStripe, getAppUrl } from '../lib/stripe.js';
+import {
+  getSubscription,
+  getStripeCustomerId,
+  setStripeCustomerId,
+  activateSubscription,
+  updateSubscriptionStatus,
+  cancelSubscription,
+  markPastDue,
+} from '../repositories/subscription.repository.js';
 import type Stripe from 'stripe';
-
-interface SubscriptionRow {
-  id: string;
-  plan_id: string;
-  status: string;
-  billing_interval: string;
-  stripe_customer_id: string | null;
-  stripe_subscription_id: string | null;
-  current_period_start: string | null;
-  current_period_end: string | null;
-  cancel_at_period_end: boolean;
-  created_at: string;
-  updated_at: string;
-}
 
 /**
  * GET /billing
@@ -33,15 +28,9 @@ export const getBillingHandler: RouteHandler = async (event) => {
   const roleCheck = requireRole(auth, 'admin');
   if (roleCheck) return roleCheck;
 
-  const { rows } = await query<SubscriptionRow>(
-    `SELECT id, plan_id, status, billing_interval, stripe_customer_id,
-            stripe_subscription_id, current_period_start, current_period_end,
-            cancel_at_period_end, created_at, updated_at
-     FROM subscriptions WHERE club_id = $1`,
-    [auth.clubId],
-  );
+  const sub = await getSubscription(auth.clubId);
 
-  if (rows.length === 0) {
+  if (!sub) {
     return ok({
       subscription: null,
       plan: null,
@@ -50,7 +39,6 @@ export const getBillingHandler: RouteHandler = async (event) => {
     });
   }
 
-  const sub = rows[0];
   const plan = getPlan(sub.plan_id);
   const isBeta = sub.plan_id === BETA_PLAN_ID;
 
@@ -121,12 +109,7 @@ export const createCheckoutHandler: RouteHandler = async (event) => {
   }
 
   // Get or create Stripe customer
-  const { rows } = await query<{ stripe_customer_id: string | null }>(
-    'SELECT stripe_customer_id FROM subscriptions WHERE club_id = $1',
-    [auth.clubId],
-  );
-
-  let customerId = rows[0]?.stripe_customer_id;
+  let customerId = await getStripeCustomerId(auth.clubId);
   if (!customerId) {
     const { rows: clubRows } = await query<{ name: string; primary_contact_email: string | null }>(
       'SELECT name, primary_contact_email FROM clubs WHERE id = $1',
@@ -141,10 +124,7 @@ export const createCheckoutHandler: RouteHandler = async (event) => {
     });
     customerId = customer.id;
 
-    await query(
-      'UPDATE subscriptions SET stripe_customer_id = $1, updated_at = now() WHERE club_id = $2',
-      [customerId, auth.clubId],
-    );
+    await setStripeCustomerId(auth.clubId, customerId);
   }
 
   const session = await stripe.checkout.sessions.create({
@@ -175,12 +155,7 @@ export const createPortalHandler: RouteHandler = async (event) => {
     return err(503, 'BILLING_NOT_ACTIVE', 'Billing is not yet active. You are on the free beta.');
   }
 
-  const { rows } = await query<{ stripe_customer_id: string | null }>(
-    'SELECT stripe_customer_id FROM subscriptions WHERE club_id = $1',
-    [auth.clubId],
-  );
-
-  const customerId = rows[0]?.stripe_customer_id;
+  const customerId = await getStripeCustomerId(auth.clubId);
   if (!customerId) {
     return badRequest('No billing account found. Please subscribe to a plan first.');
   }
@@ -223,49 +198,31 @@ export const webhookHandler: RouteHandler = async (event) => {
       if (clubId && planId && session.subscription) {
         const stripeSub = await stripe.subscriptions.retrieve(session.subscription as string);
         const firstItem = stripeSub.items.data[0];
-        await pool.query(
-          `UPDATE subscriptions SET
-             plan_id = $1, status = 'active', stripe_subscription_id = $2,
-             stripe_customer_id = $3, billing_interval = $4,
-             current_period_start = to_timestamp($5),
-             current_period_end = to_timestamp($6),
-             updated_at = now()
-           WHERE club_id = $7`,
-          [
-            planId,
-            stripeSub.id,
-            stripeSub.customer as string,
-            firstItem?.price.recurring?.interval === 'year' ? 'annual' : 'monthly',
-            firstItem?.current_period_start ?? stripeSub.start_date,
-            firstItem?.current_period_end ?? null,
-            clubId,
-          ],
-        );
+        await activateSubscription(clubId, {
+          planId,
+          stripeSubId: stripeSub.id,
+          stripeCustomerId: stripeSub.customer as string,
+          billingInterval: firstItem?.price.recurring?.interval === 'year' ? 'annual' : 'monthly',
+          periodStart: firstItem?.current_period_start ?? stripeSub.start_date,
+          periodEnd: firstItem?.current_period_end ?? null,
+        });
       }
       break;
     }
     case 'customer.subscription.updated': {
       const sub = stripeEvent.data.object as Stripe.Subscription;
       const item = sub.items.data[0];
-      await pool.query(
-        `UPDATE subscriptions SET
-           status = $1,
-           current_period_start = to_timestamp($2),
-           current_period_end = to_timestamp($3),
-           cancel_at_period_end = $4,
-           updated_at = now()
-         WHERE stripe_subscription_id = $5`,
-        [sub.status, item?.current_period_start ?? sub.start_date, item?.current_period_end ?? null, sub.cancel_at_period_end, sub.id],
-      );
+      await updateSubscriptionStatus(sub.id, {
+        status: sub.status,
+        periodStart: item?.current_period_start ?? sub.start_date,
+        periodEnd: item?.current_period_end ?? null,
+        cancelAtPeriodEnd: sub.cancel_at_period_end,
+      });
       break;
     }
     case 'customer.subscription.deleted': {
       const sub = stripeEvent.data.object as Stripe.Subscription;
-      await pool.query(
-        `UPDATE subscriptions SET status = 'canceled', updated_at = now()
-         WHERE stripe_subscription_id = $1`,
-        [sub.id],
-      );
+      await cancelSubscription(sub.id);
       break;
     }
     case 'invoice.payment_failed': {
@@ -275,11 +232,7 @@ export const webhookHandler: RouteHandler = async (event) => {
         ? subDetails.subscription
         : subDetails?.subscription?.id;
       if (subId) {
-        await pool.query(
-          `UPDATE subscriptions SET status = 'past_due', updated_at = now()
-           WHERE stripe_subscription_id = $1`,
-          [subId],
-        );
+        await markPastDue(subId);
       }
       break;
     }

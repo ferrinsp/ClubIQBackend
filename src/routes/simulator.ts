@@ -1,7 +1,7 @@
 import type { RouteHandler } from '../types.js';
 import { ok, badRequest } from '../lib/response.js';
-import { pool } from '../db.js';
 import { extractAuth, isAuthError } from '../middleware/auth.js';
+import { getSeasonBaseline } from '../services/revenue.service.js';
 import { z } from 'zod';
 
 const simulatorInputSchema = z.object({
@@ -16,7 +16,6 @@ const simulatorInputSchema = z.object({
 /**
  * POST /simulator/calculate
  * Accepts slider inputs, returns revenue projections.
- * Matches the calculation logic in prototype/src/hooks/useSimulator.ts
  */
 export const simulatorCalculateHandler: RouteHandler = async (event) => {
   const auth = extractAuth(event);
@@ -30,39 +29,13 @@ export const simulatorCalculateHandler: RouteHandler = async (event) => {
 
   const { retentionRate, feeChangePct, teamCountChange, scholarshipBudget, newPlayerRecruitment, seasonId } = parsed.data;
 
-  // Get baseline data from database
-  const seasonQuery = seasonId
-    ? 'SELECT id FROM seasons WHERE id = $1 AND club_id = $2'
-    : 'SELECT id FROM seasons WHERE club_id = $1 AND is_current = true';
-  const seasonParams = seasonId ? [seasonId, auth.clubId] : [auth.clubId];
-  const { rows: seasonRows } = await pool.query(seasonQuery, seasonParams);
-  if (seasonRows.length === 0) return badRequest('Season not found');
-  const sid = seasonRows[0].id;
+  const result = await getSeasonBaseline(auth.clubId, seasonId);
+  if (!result) return badRequest('Season not found');
 
-  // Get current season stats
-  const { rows: stats } = await pool.query(
-    `SELECT
-       count(DISTINCT ps.player_id)::int as total_players,
-       count(DISTINCT t.id)::int as team_count
-     FROM player_seasons ps
-     JOIN teams t ON t.id = ps.team_id AND t.club_id = $1
-     WHERE ps.season_id = $2`,
-    [auth.clubId, sid]
-  );
+  const { baseline } = result;
+  const { totalPlayers: currentPlayers, totalRevenue: currentSeasonRevenue, avgTuition, avgRosterSize, teamCount } = baseline;
 
-  const { rows: revenueRows } = await pool.query(
-    `SELECT coalesce(sum(amount), 0)::bigint as total_revenue
-     FROM payments WHERE club_id = $1 AND season_id = $2 AND status = 'paid'`,
-    [auth.clubId, sid]
-  );
-
-  const currentPlayers = stats[0].total_players;
-  const teamCount = stats[0].team_count;
-  const currentSeasonRevenue = Math.round(Number(revenueRows[0].total_revenue) / 100); // cents → dollars
-  const avgTuition = currentPlayers > 0 ? Math.round(currentSeasonRevenue / currentPlayers) : 0;
-  const avgRosterSize = teamCount > 0 ? Math.round(currentPlayers / teamCount) : 19;
-
-  // Calculations (matching useSimulator.ts exactly)
+  // Calculations
   const projectedReturning = Math.round(currentPlayers * (retentionRate / 100));
 
   const newTeamPlayers = teamCountChange > 0

@@ -109,10 +109,19 @@ export const signupHandler: RouteHandler = async (event) => {
     await client.query('COMMIT');
 
     return created({
-      userId: 'dev-user',
-      clubId: club.id,
-      email,
-      role: 'admin',
+      accessToken: `dev-token-${club.id}`,
+      idToken: `dev-id-${club.id}`,
+      refreshToken: `dev-refresh-${club.id}`,
+      expiresIn: 3600,
+      club: {
+        id: club.id,
+        name: club.name,
+      },
+      user: {
+        id: 'dev-user',
+        email,
+        role: 'admin',
+      },
     });
   } catch (err) {
     await client.query('ROLLBACK');
