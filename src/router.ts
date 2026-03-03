@@ -7,6 +7,7 @@ import { createUploadHandler, listUploadsHandler, getUploadHandler } from './rou
 import { retentionSummaryHandler, retentionCohortsHandler, retentionTeamsHandler, retentionTrendsHandler } from './routes/retention.js';
 import { revenueForecastHandler, revenueByAgeGroupHandler } from './routes/revenue.js';
 import { simulatorCalculateHandler } from './routes/simulator.js';
+import { listSeasonsHandler } from './routes/seasons.js';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
@@ -31,6 +32,7 @@ const routes: Route[] = [
   { method: 'GET',  path: '/revenue/forecast',      handler: revenueForecastHandler },
   { method: 'GET',  path: '/revenue/by-age-group',  handler: revenueByAgeGroupHandler },
   { method: 'POST', path: '/simulator/calculate',   handler: simulatorCalculateHandler },
+  { method: 'GET',  path: '/seasons',              handler: listSeasonsHandler },
 ];
 
 // Routes with path parameters (e.g., /uploads/:id)

@@ -58,7 +58,7 @@ export const simulatorCalculateHandler: RouteHandler = async (event) => {
 
   const currentPlayers = stats[0].total_players;
   const teamCount = stats[0].team_count;
-  const currentSeasonRevenue = Number(revenueRows[0].total_revenue);
+  const currentSeasonRevenue = Math.round(Number(revenueRows[0].total_revenue) / 100); // cents → dollars
   const avgTuition = currentPlayers > 0 ? Math.round(currentSeasonRevenue / currentPlayers) : 0;
   const avgRosterSize = teamCount > 0 ? Math.round(currentPlayers / teamCount) : 19;
 

@@ -69,7 +69,7 @@ async function getBaseline(clubId: string, seasonId?: string): Promise<{ baselin
 
   const totalPlayers = stats[0].total_players;
   const teamCount = stats[0].team_count;
-  const totalRevenue = Number(revenueRows[0].total_revenue);
+  const totalRevenue = Math.round(Number(revenueRows[0].total_revenue) / 100); // cents → dollars
   const avgTuition = totalPlayers > 0 ? Math.round(totalRevenue / totalPlayers) : 0;
   const avgRosterSize = teamCount > 0 ? Math.round(totalPlayers / teamCount) : 19;
 
@@ -182,10 +182,13 @@ export const revenueByAgeGroupHandler: RouteHandler = async (event) => {
     [auth.clubId, sid]
   );
 
-  return ok(rows.map(r => ({
-    ageGroup: r.age_group,
-    playerCount: r.player_count,
-    totalRevenue: Number(r.total_revenue),
-    avgRevenuePerPlayer: r.player_count > 0 ? Math.round(Number(r.total_revenue) / r.player_count) : 0,
-  })));
+  return ok(rows.map(r => {
+    const totalRevenue = Math.round(Number(r.total_revenue) / 100); // cents → dollars
+    return {
+      ageGroup: r.age_group,
+      playerCount: r.player_count,
+      totalRevenue,
+      avgRevenuePerPlayer: r.player_count > 0 ? Math.round(totalRevenue / r.player_count) : 0,
+    };
+  }));
 };

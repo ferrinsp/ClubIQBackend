@@ -84,7 +84,7 @@ export const retentionSummaryHandler: RouteHandler = async (event) => {
     totalChurned: churned,
     totalGraduated: graduated,
     previousSeasonPlayers: prevTotal,
-    currentSeasonRevenue: revenueRows[0].total_revenue,
+    currentSeasonRevenue: Math.round(revenueRows[0].total_revenue / 100),
   });
 };
 
@@ -257,7 +257,7 @@ export const retentionTeamsHandler: RouteHandler = async (event) => {
 
 /**
  * GET /retention/trends
- * Multi-season retention trend data.
+ * Multi-season retention trend data with age-group breakdowns.
  */
 export const retentionTrendsHandler: RouteHandler = async (event) => {
   const auth = extractAuth(event);
@@ -279,6 +279,7 @@ export const retentionTrendsHandler: RouteHandler = async (event) => {
     const prevSeason = seasons[i - 1];
     const currSeason = seasons[i];
 
+    // Overall retention
     const { rows } = await pool.query(
       `SELECT
          count(DISTINCT prev.player_id)::int as prev_total,
@@ -290,8 +291,40 @@ export const retentionTrendsHandler: RouteHandler = async (event) => {
       [auth.clubId, prevSeason.id, currSeason.id]
     );
 
+    // Age-group breakdown for U10-U12 and U13-U15
+    const { rows: ageRows } = await pool.query(
+      `SELECT
+         t.age_group,
+         count(DISTINCT prev.player_id)::int as prev_total,
+         count(DISTINCT CASE WHEN curr.player_id IS NOT NULL THEN prev.player_id END)::int as returning
+       FROM player_seasons prev
+       JOIN teams t ON t.id = prev.team_id AND t.club_id = $1
+       LEFT JOIN player_seasons curr ON curr.player_id = prev.player_id AND curr.season_id = $3
+       WHERE prev.season_id = $2
+       GROUP BY t.age_group`,
+      [auth.clubId, prevSeason.id, currSeason.id]
+    );
+
     const prevTotal = rows[0].prev_total;
     const returning = rows[0].returning;
+
+    // Aggregate U10-U12 and U13-U15
+    const u10u12Groups = ['U10', 'U11', 'U12'];
+    const u13u15Groups = ['U13', 'U14', 'U15'];
+
+    let u10u12Prev = 0, u10u12Ret = 0;
+    let u13u15Prev = 0, u13u15Ret = 0;
+
+    for (const r of ageRows) {
+      if (u10u12Groups.includes(r.age_group)) {
+        u10u12Prev += r.prev_total;
+        u10u12Ret += r.returning;
+      }
+      if (u13u15Groups.includes(r.age_group)) {
+        u13u15Prev += r.prev_total;
+        u13u15Ret += r.returning;
+      }
+    }
 
     trends.push({
       seasonId: currSeason.id,
@@ -300,6 +333,12 @@ export const retentionTrendsHandler: RouteHandler = async (event) => {
       returningPlayers: returning,
       retentionRate: prevTotal > 0
         ? Math.round((returning / prevTotal) * 1000) / 10
+        : 0,
+      u10u12: u10u12Prev > 0
+        ? Math.round((u10u12Ret / u10u12Prev) * 1000) / 10
+        : 0,
+      u13u15: u13u15Prev > 0
+        ? Math.round((u13u15Ret / u13u15Prev) * 1000) / 10
         : 0,
     });
   }
