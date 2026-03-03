@@ -4,6 +4,7 @@ import { healthHandler } from './routes/health.js';
 import { loginHandler, refreshHandler } from './routes/auth.js';
 import { getClubHandler, updateClubHandler } from './routes/clubs.js';
 import { createUploadHandler, listUploadsHandler, getUploadHandler } from './routes/uploads.js';
+import { retentionSummaryHandler, retentionCohortsHandler, retentionTeamsHandler, retentionTrendsHandler } from './routes/retention.js';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
@@ -21,6 +22,10 @@ const routes: Route[] = [
   { method: 'PUT',  path: '/clubs/me',     handler: updateClubHandler },
   { method: 'POST', path: '/uploads',      handler: createUploadHandler },
   { method: 'GET',  path: '/uploads',      handler: listUploadsHandler },
+  { method: 'GET',  path: '/retention/summary',  handler: retentionSummaryHandler },
+  { method: 'GET',  path: '/retention/cohorts',  handler: retentionCohortsHandler },
+  { method: 'GET',  path: '/retention/teams',    handler: retentionTeamsHandler },
+  { method: 'GET',  path: '/retention/trends',   handler: retentionTrendsHandler },
 ];
 
 // Routes with path parameters (e.g., /uploads/:id)
