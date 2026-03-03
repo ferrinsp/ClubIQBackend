@@ -3,6 +3,7 @@ import { notFound } from './lib/response.js';
 import { healthHandler } from './routes/health.js';
 import { loginHandler, refreshHandler } from './routes/auth.js';
 import { getClubHandler, updateClubHandler } from './routes/clubs.js';
+import { createUploadHandler, listUploadsHandler, getUploadHandler } from './routes/uploads.js';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
@@ -18,6 +19,13 @@ const routes: Route[] = [
   { method: 'POST', path: '/auth/refresh', handler: refreshHandler },
   { method: 'GET',  path: '/clubs/me',     handler: getClubHandler },
   { method: 'PUT',  path: '/clubs/me',     handler: updateClubHandler },
+  { method: 'POST', path: '/uploads',      handler: createUploadHandler },
+  { method: 'GET',  path: '/uploads',      handler: listUploadsHandler },
+];
+
+// Routes with path parameters (e.g., /uploads/:id)
+const paramRoutes: Route[] = [
+  { method: 'GET', path: '/uploads/', handler: getUploadHandler },
 ];
 
 export function dispatch(event: LambdaEvent) {
@@ -37,10 +45,13 @@ export function dispatch(event: LambdaEvent) {
     });
   }
 
+  // Exact match first
   const route = routes.find(r => r.method === method && r.path === path);
-  if (!route) {
-    return Promise.resolve(notFound(`No route for ${method} ${path}`));
-  }
+  if (route) return route.handler(event);
 
-  return route.handler(event);
+  // Prefix match for parameterized routes (e.g., /uploads/abc-123)
+  const paramRoute = paramRoutes.find(r => r.method === method && path.startsWith(r.path) && path !== r.path.slice(0, -1));
+  if (paramRoute) return paramRoute.handler(event);
+
+  return Promise.resolve(notFound(`No route for ${method} ${path}`));
 }
