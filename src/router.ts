@@ -5,6 +5,8 @@ import { loginHandler, refreshHandler } from './routes/auth.js';
 import { getClubHandler, updateClubHandler } from './routes/clubs.js';
 import { createUploadHandler, listUploadsHandler, getUploadHandler } from './routes/uploads.js';
 import { retentionSummaryHandler, retentionCohortsHandler, retentionTeamsHandler, retentionTrendsHandler } from './routes/retention.js';
+import { revenueForecastHandler, revenueByAgeGroupHandler } from './routes/revenue.js';
+import { simulatorCalculateHandler } from './routes/simulator.js';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
@@ -26,6 +28,9 @@ const routes: Route[] = [
   { method: 'GET',  path: '/retention/cohorts',  handler: retentionCohortsHandler },
   { method: 'GET',  path: '/retention/teams',    handler: retentionTeamsHandler },
   { method: 'GET',  path: '/retention/trends',   handler: retentionTrendsHandler },
+  { method: 'GET',  path: '/revenue/forecast',      handler: revenueForecastHandler },
+  { method: 'GET',  path: '/revenue/by-age-group',  handler: revenueByAgeGroupHandler },
+  { method: 'POST', path: '/simulator/calculate',   handler: simulatorCalculateHandler },
 ];
 
 // Routes with path parameters (e.g., /uploads/:id)
